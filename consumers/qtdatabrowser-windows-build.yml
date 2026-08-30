@@ -44,8 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = gh release list --repo gapost/qmatplotwidget --limit 1 --json tagName --jq '.[0].tagName'
-          gh release download $tag --repo gapost/qmatplotwidget `
+          gh release download v0.2.2 --repo gapost/qmatplotwidget `
             --pattern "*.pkg.tar.zst" `
             --dir C:\Temp\qmatplotwidget-pkgs
 

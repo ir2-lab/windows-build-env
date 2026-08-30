@@ -1,0 +1,97 @@
+name: Windows Build
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.2.0)'
+        required: true
+        default: '0.0.0-test'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up pinned toolchain
+        uses: ir2-lab/windows-build-env@2026.06
+
+      - name: Configure
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install"
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build --parallel
+
+      - name: Install
+        shell: msys2 {0}
+        run: cmake --install build
+
+      - name: Create ZIP package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          Compress-Archive -Path "$env:GITHUB_WORKSPACE\install\*" `
+            -DestinationPath "$env:GITHUB_WORKSPACE\QMatPlotWidget-$version-win64.zip"
+
+      - name: Build MSYS2 package
+        shell: msys2 {0}
+        run: bash dist/mingw64/build_pkg.sh "${{ steps.version.outputs.version }}"
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QMatPlotWidget-${{ steps.version.outputs.version }}-win64.zip
+          path: QMatPlotWidget-${{ steps.version.outputs.version }}-win64.zip
+
+      - name: Upload MSYS2 runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qmatplotwidget-${{ steps.version.outputs.version }}-ucrt64.pkg.tar.zst
+          path: |
+            dist/mingw64/build/*.pkg.tar.zst
+            !dist/mingw64/build/*-devel-*.pkg.tar.zst
+
+      - name: Upload MSYS2 devel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qmatplotwidget-devel-${{ steps.version.outputs.version }}-ucrt64.pkg.tar.zst
+          path: dist/mingw64/build/*-devel-*.pkg.tar.zst
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            && PRERELEASE="" || PRERELEASE="--prerelease"
+          gh release create "$GITHUB_REF_NAME" \
+            "QMatPlotWidget-${{ steps.version.outputs.version }}-win64.zip" \
+            dist/mingw64/build/*.pkg.tar.zst \
+            --title "QMatPlotWidget $GITHUB_REF_NAME" \
+            --generate-notes \
+            $PRERELEASE

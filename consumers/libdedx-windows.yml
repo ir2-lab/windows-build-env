@@ -1,0 +1,98 @@
+name: Windows Build and Package
+
+on:
+  push:
+    branches: [main, dev]
+    tags:
+      - '[0-9]*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-package:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pinned toolchain
+        uses: ir2-lab/windows-build-env@2026.06
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Get version
+        id: version
+        run: |
+          echo "value=$(grep 'CMAKE_PROJECT_VERSION:STATIC' build/CMakeCache.txt | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Build MSYS2 UCRT64 packages
+        run: bash dist/mingw64/build_pkg.sh ${{ steps.version.outputs.value }}
+
+      - name: Create Inno Setup installer
+        run: cd build && cpack -G INNOSETUP
+
+      - name: Create runtime ZIP (DLL only)
+        run: |
+          cd build
+          cpack -G ZIP \
+            -D "CPACK_COMPONENTS_ALL=Runtime" \
+            -D "CPACK_PACKAGE_FILE_NAME=libdedx-${{ steps.version.outputs.value }}-win64-runtime"
+
+      - name: Create development ZIP (DLL + import lib + headers)
+        run: |
+          cd build
+          cpack -G ZIP \
+            -D "CPACK_PACKAGE_FILE_NAME=libdedx-${{ steps.version.outputs.value }}-win64-devel"
+
+      - name: Upload Inno Setup installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: libdedx-windows-installer
+          path: build/*.exe
+
+      - name: Upload runtime ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: libdedx-windows-runtime
+          path: build/*-runtime.zip
+
+      - name: Upload development ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: libdedx-windows-devel
+          path: build/*-devel.zip
+
+      - name: Upload MSYS2 runtime package
+        uses: actions/upload-artifact@v4
+        with:
+          name: libdedx-msys2-ucrt64-runtime
+          path: dist/mingw64/build/mingw-w64-ucrt-x86_64-libdedx-[0-9]*.pkg.tar.zst
+
+      - name: Upload MSYS2 devel package
+        uses: actions/upload-artifact@v4
+        with:
+          name: libdedx-msys2-ucrt64-devel
+          path: dist/mingw64/build/mingw-w64-ucrt-x86_64-libdedx-devel-*.pkg.tar.zst
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            build/*.exe
+            build/*-runtime.zip
+            build/*-devel.zip
+            dist/mingw64/build/*.pkg.tar.zst

@@ -1,0 +1,92 @@
+name: Windows Build and Package
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.2.3)'
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build and Package (Windows / MSYS2 UCRT64)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pinned toolchain
+        uses: ir2-lab/windows-build-env@2026.06
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure
+        run: |
+          cmake -G Ninja -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQTVECTOREDIT_QT_VERSION=5 \
+            -DQTVECTOREDIT_BUILD_EXAMPLES=OFF \
+            -DQTVECTOREDIT_BUILD_TESTS=OFF \
+            -DQTVECTOREDIT_BUILD_DESIGNER_PLUGIN=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Install
+        run: cmake --install build
+
+      - name: Create zip
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.tag }}".TrimStart('v')
+          Compress-Archive -Path build\QtVectorEdit\* `
+            -DestinationPath "QtVectorEdit-${ver}-win64.zip"
+
+      - name: Build MSYS2 packages
+        run: bash dist/mingw64/build_pkg.sh ${{ steps.ver.outputs.tag }}
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: QtVectorEdit-win64-zip
+          path: QtVectorEdit-*-win64.zip
+
+      - name: Upload runtime package
+        uses: actions/upload-artifact@v4
+        with:
+          name: QtVectorEdit-ucrt64-runtime
+          path: dist/mingw64/build/mingw-w64-ucrt-x86_64-qtvectoredit-[0-9]*.pkg.tar.zst
+
+      - name: Upload devel package
+        uses: actions/upload-artifact@v4
+        with:
+          name: QtVectorEdit-ucrt64-devel
+          path: dist/mingw64/build/mingw-w64-ucrt-x86_64-qtvectoredit-devel-*.pkg.tar.zst
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          prerelease: ${{ contains(github.ref_name, '_') || contains(github.ref_name, '-') }}
+          files: |
+            QtVectorEdit-*-win64.zip
+            dist/mingw64/build/mingw-w64-ucrt-x86_64-qtvectoredit-*.pkg.tar.zst

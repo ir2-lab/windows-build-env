@@ -1,0 +1,74 @@
+name: Smoke test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pinned toolchain
+        uses: ./
+
+      - name: Assert pinned versions
+        run: |
+          set -euo pipefail
+          check() {
+            local pkg="$1" want="$2"
+            local got
+            got="$(pacman -Q "$pkg" | awk '{print $2}')"
+            if [ "$got" != "$want" ]; then
+              echo "::error::$pkg is $got, expected $want (pin not taking effect)"
+              exit 1
+            fi
+            echo "ok: $pkg $got"
+          }
+          check mingw-w64-ucrt-x86_64-gcc         16.1.0-5
+          check mingw-w64-ucrt-x86_64-binutils    2.46-3
+          check mingw-w64-ucrt-x86_64-cmake       4.3.3-1
+          check mingw-w64-ucrt-x86_64-ninja       1.13.2-1
+          check mingw-w64-ucrt-x86_64-qt5-base    '5.15.19+kde+r96-1'
+          check mingw-w64-ucrt-x86_64-hdf5        2.1.1-1
+
+      - name: Compile a trivial program
+        run: |
+          set -euo pipefail
+          cat > hello.cpp <<'EOF'
+          #include <cstdint>
+          #include <iostream>
+          int main() { std::uint32_t x = 42; std::cout << "ok " << x << "\n"; }
+          EOF
+          g++ -O2 -std=c++17 hello.cpp -o hello.exe
+          ./hello.exe
+
+      - name: Build a minimal CMake + Qt project
+        run: |
+          set -euo pipefail
+          mkdir -p proj && cd proj
+          cat > CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.20)
+          project(smoke LANGUAGES CXX)
+          find_package(Qt5 COMPONENTS Core REQUIRED)
+          add_executable(smoke main.cpp)
+          target_link_libraries(smoke PRIVATE Qt5::Core)
+          EOF
+          cat > main.cpp <<'EOF'
+          #include <QCoreApplication>
+          #include <QDebug>
+          int main(int argc, char** argv) {
+            QCoreApplication a(argc, argv);
+            qDebug() << "qt ok" << QT_VERSION_STR;
+            return 0;
+          }
+          EOF
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          ./build/smoke.exe

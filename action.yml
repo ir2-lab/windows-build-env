@@ -52,15 +52,11 @@ runs:
           urls+=("$base/${stem}-any.pkg.tar.zst")
         done < <(grep -oE 'mingw-w64-ucrt-x86_64-[^[:space:]]+' "$manifest")
 
-        echo "pinned packages (${#urls[@]}):"
-        printf '  %s\n' "${urls[@]}"
+        echo "pinned packages (${#urls[@]})"
 
-        # Refresh sync DBs so pacman can resolve the (unpinned) transitive deps
-        # of the pinned packages without upgrading anything already installed.
-        pacman -Sy --noconfirm
-
-        # Single transaction: pacman orders the pinned packages itself and pulls
-        # any missing deps (icu, harfbuzz, freetype, ...) at their latest version.
+        # The list is the full dependency closure, so this is a self-contained
+        # transaction: pacman orders the packages itself and needs nothing from
+        # the sync repos. --needed skips anything already at the pinned version.
         pacman -U --needed --noconfirm "${urls[@]}"
 
         if [ -n "${EXTRA_PACKAGES// /}" ]; then
@@ -71,13 +67,14 @@ runs:
     - name: Report installed toolchain
       shell: msys2 {0}
       run: |
-        set -e
-        gcc --version | head -1
-        g++ --version | head -1
-        cmake --version | head -1
-        ninja --version
-        qmake --version || true
+        echo "PATH=$PATH"
+        for t in gcc g++ cmake ninja qmake; do
+          p="$(command -v "$t" || true)"
+          if [ -n "$p" ]; then printf '%-6s %s  ' "$t" "$p"; "$t" --version | head -1; \
+          else echo "$t: NOT FOUND"; fi
+        done
         pacman -Q mingw-w64-ucrt-x86_64-gcc \
                   mingw-w64-ucrt-x86_64-binutils \
                   mingw-w64-ucrt-x86_64-qt5-base \
-                  mingw-w64-ucrt-x86_64-hdf5
+                  mingw-w64-ucrt-x86_64-hdf5 \
+                  mingw-w64-ucrt-x86_64-cmake || true

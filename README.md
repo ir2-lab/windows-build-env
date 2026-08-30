@@ -46,8 +46,15 @@ those packages.
 
 ## What is pinned
 
-See [`toolchain.yml`](toolchain.yml) for the exact list and the CI run it was
-extracted from. Highlights:
+The **entire dependency closure** of the June-2026 build — 99 packages, the full
+`Packages (…)` list from that run's `pacman` step (minus gdb, plus eigen3) — is
+pinned and installed as one self-contained `pacman -U` transaction. Nothing is
+left to float. (A partial pin was tried first and failed: an unpinned newer
+`jsoncpp` broke the pinned CMake; an unpinned newer `gcc-libgfortran` forced the
+pinned HDF5 to be skipped.)
+
+See [`toolchain.yml`](toolchain.yml) for the exact list and the CI run it came
+from. Highlights:
 
 | | version |
 |---|---|

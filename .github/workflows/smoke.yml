@@ -18,25 +18,32 @@ jobs:
       - name: Set up pinned toolchain
         uses: ./
 
-      - name: Assert pinned versions
+      - name: Assert every pinned package is installed at its pinned version
         run: |
           set -euo pipefail
-          check() {
-            local pkg="$1" want="$2"
-            local got
-            got="$(pacman -Q "$pkg" | awk '{print $2}')"
-            if [ "$got" != "$want" ]; then
-              echo "::error::$pkg is $got, expected $want (pin not taking effect)"
-              exit 1
+          rc=0
+          n=0
+          # Each stem in toolchain.yml is <mingw-w64-ucrt-x86_64-NAME>-<VER>-<REL>.
+          # MSYS2 pkgver never contains '-', so the last two '-' fields are VER, REL.
+          while read -r stem; do
+            [ -n "$stem" ] || continue
+            n=$((n + 1))
+            rest="${stem#mingw-w64-ucrt-x86_64-}"
+            rel="${rest##*-}"; tmp="${rest%-*}"
+            ver="${tmp##*-}"; name="${tmp%-*}"
+            pkg="mingw-w64-ucrt-x86_64-${name}"
+            want="${ver}-${rel}"
+            got="$(pacman -Q "$pkg" 2>/dev/null | awk '{print $2}')" || true
+            if [ -z "$got" ]; then
+              echo "::error::$pkg not installed (expected $want)"; rc=1
+            elif [ "$got" != "$want" ]; then
+              echo "::error::$pkg is $got, expected $want (pin not taking effect)"; rc=1
+            else
+              echo "ok: $pkg $got"
             fi
-            echo "ok: $pkg $got"
-          }
-          check mingw-w64-ucrt-x86_64-gcc         16.1.0-5
-          check mingw-w64-ucrt-x86_64-binutils    2.46-3
-          check mingw-w64-ucrt-x86_64-cmake       4.3.3-1
-          check mingw-w64-ucrt-x86_64-ninja       1.13.2-1
-          check mingw-w64-ucrt-x86_64-qt5-base    '5.15.19+kde+r96-1'
-          check mingw-w64-ucrt-x86_64-hdf5        2.1.1-1
+          done < <(grep -oE 'mingw-w64-ucrt-x86_64-[^[:space:]]+' toolchain.yml)
+          echo "checked $n pinned packages"
+          exit $rc
 
       - name: Compile a trivial program
         run: |

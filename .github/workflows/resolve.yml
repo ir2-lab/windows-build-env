@@ -1,0 +1,89 @@
+name: Resolve current toolchain closure
+
+# Helper for bumping the pin. Installs the needed packages from CURRENT MSYS2
+# (nothing pinned) and prints the full dependency closure as lines ready to
+# paste into toolchain.yml, plus the current msys2/setup-msys2 release + SHA.
+#
+# Run it from the Actions tab (workflow_dispatch), open the run, read the
+# "Resolve" job summary. Nothing is committed or published.
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'Top-level packages to resolve (space-separated, no mingw prefix)'
+        required: false
+        default: >-
+          toolchain cmake ninja hdf5 qt5-base qt5-svg qt5-tools qwt-qt5
+          angleproject eigen3
+
+jobs:
+  resolve:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Set up MSYS2 (latest)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: base-devel git
+
+      - name: Install requested packages (current versions)
+        env:
+          PKGS: ${{ inputs.packages }}
+        run: |
+          set -euo pipefail
+          specs=""
+          for p in $PKGS; do specs="$specs mingw-w64-ucrt-x86_64-$p"; done
+          echo "installing:$specs"
+          pacman -S --needed --noconfirm $specs
+
+      - name: Emit toolchain.yml package list
+        run: |
+          set -euo pipefail
+          # Full closure = every UCRT64 mingw package now installed, minus the
+          # debugger (dropped from the pin). Format matches toolchain.yml.
+          list="$(pacman -Q \
+            | awk '/^mingw-w64-ucrt-x86_64-/ {print "  - " $1 "-" $2}' \
+            | grep -vE '^  - mingw-w64-ucrt-x86_64-gdb(-multiarch)?-' \
+            | sort)"
+          count="$(printf '%s\n' "$list" | grep -c . || true)"
+
+          {
+            echo "## toolchain.yml \`packages:\` list ($count packages)"
+            echo
+            echo "Copy from \`packages:\` down, replacing the current list."
+            echo
+            echo '```yaml'
+            echo "packages:"
+            printf '%s\n' "$list"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          printf '%s\n' "$list"
+
+      - name: Report setup-msys2 release to pin
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rel="$(gh api repos/msys2/setup-msys2/releases/latest --jq '.tag_name')"
+          sha="$(gh api repos/msys2/setup-msys2/git/refs/tags/$rel --jq '.object.sha')"
+          # tag may be annotated; deref to commit
+          type="$(gh api repos/msys2/setup-msys2/git/refs/tags/$rel --jq '.object.type')"
+          if [ "$type" = "tag" ]; then
+            sha="$(gh api repos/msys2/setup-msys2/git/tags/$sha --jq '.object.sha')"
+          fi
+          {
+            echo
+            echo "## msys2/setup-msys2 latest"
+            echo
+            echo "- release: \`$rel\`"
+            echo "- commit : \`$sha\`"
+            echo
+            echo "Set \`setup_msys2_sha\` in toolchain.yml and the \`uses:\` line in action.yml to this SHA if bumping the action."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -39,10 +39,10 @@ those packages.
 
 ### Inputs
 
-| input | default | purpose |
-|---|---|---|
-| `extra-packages` | `''` | Extra pacman specs to install at latest version, after the pinned set. |
-| `path-type` | `inherit` | Passed to `msys2/setup-msys2`. |
+| input            | default   | purpose                                                                |
+| ---------------- | --------- | ---------------------------------------------------------------------- |
+| `extra-packages` | `''`      | Extra pacman specs to install at latest version, after the pinned set. |
+| `path-type`      | `inherit` | Passed to `msys2/setup-msys2`.                                         |
 
 ## What is pinned
 
@@ -56,25 +56,28 @@ pinned HDF5 to be skipped.)
 See [`toolchain.yml`](toolchain.yml) for the exact list and the CI run it came
 from. Highlights:
 
-| | version |
-|---|---|
-| GCC | 16.1.0-5 |
-| binutils | 2.46-3 |
+|                       | version                 |
+| --------------------- | ----------------------- |
+| GCC                   | 16.1.0-5                |
+| binutils              | 2.46-3                  |
 | mingw-w64 crt/headers | 14.0.0.r59.g93753750c-1 |
-| Qt5 | 5.15.19+kde+r96 |
-| HDF5 | 2.1.1 |
-| CMake / Ninja | 4.3.3 / 1.13.2 |
-| `msys2/setup-msys2` | v2.31.1 (`e9898307…`) |
+| Eigen3                | 3.4.0 (†)               |
+| Qt5                   | 5.15.19+kde+r96         |
+| HDF5                  | 2.1.1                   |
+| CMake / Ninja         | 4.3.3 / 1.13.2          |
+| `msys2/setup-msys2`   | v2.31.1 (`e9898307…`)   |
 
 Transitive dependencies with stable ABIs (icu, harfbuzz, freetype, openssl, …)
 are left floating.
 
+(†) 8/9/2026 : OpenTRIM compiles fine with Eigen3 v5.0.1, can be changed in next release
+
 ## Versioning
 
-| tag | meaning |
-|---|---|
+| tag       | meaning                                                           |
+| --------- | ----------------------------------------------------------------- |
 | `2026.06` | Immutable — the June-2026 snapshot. Consumers should pin to this. |
-| `v1` | Moving — always points at the newest snapshot. Convenience only. |
+| `v1`      | Moving — always points at the newest snapshot. Convenience only.  |
 
 Both are placed on the same commit. When the pin is bumped, a new immutable
 `YYYY.MM` tag is cut and `v1` is moved forward.
@@ -152,6 +155,6 @@ repoint `package_base` in `toolchain.yml` at
 
 ## Changelog
 
-| tag | date | notes |
-|---|---|---|
+| tag       | date    | notes                                                                                                                                                                                                              |
+| --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `2026.06` | 2026-08 | Initial pin. Snapshot from OpenTRIM CI run `27217912639` (tag `v1.1.6`, 2026-06-09). Chosen as the last green Windows build before GCC 16.2 / mingw-w64 headers r302 removed the non-standard `uint` typedef leak. |
